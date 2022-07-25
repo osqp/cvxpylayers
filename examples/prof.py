@@ -12,6 +12,7 @@ import time
 import torch
 
 from qpth.qp import QPFunction
+from osqpth.qp import QPFunction as OSQPFunction
 from cvxpylayers.torch.cvxpylayer import CvxpyLayer
 
 from scipy.linalg import sqrtm
@@ -20,9 +21,9 @@ import cvxpy as cp
 import pandas as pd
 
 from IPython.core import ultratb
-sys.excepthook = ultratb.FormattedTB(
-    mode='Verbose',
-    color_scheme='Linux', call_pdb=1)
+#sys.excepthook = ultratb.FormattedTB(
+#    mode='Verbose',
+#    color_scheme='Linux', call_pdb=1)
 
 
 def main():
@@ -41,19 +42,24 @@ def prof(args):
             nz, nbatch, cuda))
         for i in range(args.nTrials):
             print('  + Trial {}'.format(i))
-            t = prof_dense_qp(i, nz, nbatch, 'dense', cuda)
+            t = prof_dense_qp(i, nz, nbatch, 'dense', QPFunction, 'qpth', cuda)
+            trials += t
+            print(t)
+        for i in range(args.nTrials):
+            print('  + Trial {}'.format(i))
+            t = prof_dense_qp(i, nz, nbatch, 'dense', OSQPFunction, 'osqp', cuda)
             trials += t
             print(t)
 
-    for nz, nbatch, cuda in itertools.product(
-            [1024], [32], [False]):
-        print('--- {} vars/cons, batch size: {}, cuda: {} ---'.format(
-            nz, nbatch, cuda))
-        for i in range(args.nTrials):
-            print('  + Trial {}'.format(i))
-            t = prof_sparse_qp(i, nz, nbatch, None, cuda)
-            trials += t
-            print(t)
+    # for nz, nbatch, cuda in itertools.product(
+    #         [1024], [32], [False]):
+    #     print('--- {} vars/cons, batch size: {}, cuda: {} ---'.format(
+    #         nz, nbatch, cuda))
+    #     for i in range(args.nTrials):
+    #         print('  + Trial {}'.format(i))
+    #         t = prof_sparse_qp(i, nz, nbatch, None, cuda)
+    #         trials += t
+    #         print(t)
 
     df = pd.DataFrame(trials)
     df.to_csv('results.csv', index=False)
@@ -185,7 +191,7 @@ def prof_sparse_qp(trial, nz, nbatch, cons, cuda=True):
     return trials
 
 
-def prof_dense_qp(trial, nz, nbatch, cons, cuda=True):
+def prof_dense_qp(trial, nz, nbatch, cons, qpfunction, qpname, cuda=True):
     trials = []
 
     npr.seed(trial)
@@ -221,7 +227,7 @@ def prof_dense_qp(trial, nz, nbatch, cons, cuda=True):
     torch.cuda.synchronize()
     torch.cuda.synchronize()
     start = time.time()
-    x = QPFunction(verbose=False, eps=1e-8, notImprovedLim=5,
+    x = qpfunction(verbose=False, eps=1e-8, notImprovedLim=5,
                    maxIter=1000)(Q_tch, p_tch, G_tch, h_tch, e, e)
     torch.cuda.synchronize()
     t = time.time() - start
@@ -230,7 +236,7 @@ def prof_dense_qp(trial, nz, nbatch, cons, cuda=True):
         'nz': nz,
         'nbatch': nbatch,
         'cuda': cuda,
-        'mode': 'qpth',
+        'mode': qpname,
         'direction': 'forward',
         'time': t,
         'qp': 'dense'
@@ -245,7 +251,7 @@ def prof_dense_qp(trial, nz, nbatch, cons, cuda=True):
         'nz': nz,
         'nbatch': nbatch,
         'cuda': cuda,
-        'mode': 'qpth',
+        'mode': qpname,
         'direction': 'backward',
         'time': t,
         'qp': 'dense'
